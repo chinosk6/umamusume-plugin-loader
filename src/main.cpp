@@ -7,10 +7,11 @@
 #include <unordered_set>
 #include <charconv>
 #include <cassert>
-#include<format>
+#include <format>
 #include <cpprest/uri.h>
 #include <cpprest/http_listener.h>
 #include <ranges>
+#include <windows.h>
 
 extern bool init_hook();
 extern void uninit_hook();
@@ -89,11 +90,25 @@ namespace
 	}
 }
 
+LONG WINAPI AddressExceptionHandler(EXCEPTION_POINTERS* ExceptionInfo) {
+	// Check if the exception is an access violation
+	if (ExceptionInfo->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+		// Check if the violation address is above 0x7FFFFFFFFFFF
+		if (ExceptionInfo->ExceptionRecord->ExceptionAddress > (PVOID)0x7FFFFFFFFFFF) {
+			// Return EXCEPTION_CONTINUE_EXECUTION to ignore the exception and continue
+			return EXCEPTION_CONTINUE_EXECUTION;
+		}
+	}
+	// For other exceptions or addresses, use the default exception handler
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
 
 int __stdcall DllMain(HINSTANCE dllModule, DWORD reason, LPVOID)
 {
 	if (reason == DLL_PROCESS_ATTACH)
 	{
+		AddVectoredExceptionHandler(1, AddressExceptionHandler);
 		// the DMM Launcher set start path to system32 wtf????
 		std::string module_name;
 		module_name.resize(MAX_PATH);
@@ -145,6 +160,7 @@ int __stdcall DllMain(HINSTANCE dllModule, DWORD reason, LPVOID)
 	}
 	else if (reason == DLL_PROCESS_DETACH)
 	{
+		RemoveVectoredExceptionHandler(AddressExceptionHandler);
 		uninit_hook();
 	}
 	return 1;
