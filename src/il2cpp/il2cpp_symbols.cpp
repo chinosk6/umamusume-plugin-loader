@@ -71,6 +71,8 @@ namespace il2cpp_symbols
 		RESOLVE_IMPORT(il2cpp_class_from_system_type);
 		RESOLVE_IMPORT(il2cpp_method_get_name);
 
+		printf("il2cpp_domain_get() at %p\n", il2cpp_domain_get);
+
 		il2cpp_domain = il2cpp_domain_get();
 	}
 

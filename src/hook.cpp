@@ -8,6 +8,8 @@
 
 using namespace std;
 
+std::unordered_map<std::string, std::string> g_il2cppSymbols{};
+
 namespace
 {
 	void path_game_assembly();
@@ -128,6 +130,34 @@ namespace
 		return reinterpret_cast<decltype(GetFunctionPointerForDelegateInternal_hook)*>(GetFunctionPointerForDelegateInternal_orig)(a1);
 	}
 
+	std::string GetIl2cppRealName(const std::string& requestName) {
+		if (auto it = g_il2cppSymbols.find(requestName); it != g_il2cppSymbols.end()) {
+			return it->second;
+		}
+		return requestName;
+	}
+
+	void* GetProcAddress_orig;
+	FARPROC GetProcAddress_hook(HMODULE hModule, const char* lpProcName) {
+		TCHAR szPath[MAX_PATH] = { 0 };
+		if (GetModuleFileName(hModule, szPath, MAX_PATH) != 0)
+		{
+			const std::string moduleName(szPath);
+			//printf("GetProcAddress - module: %s, proc: %s\n", moduleName.c_str(), lpProcName);
+
+			if (moduleName.ends_with("GameAssembly.dll")) {
+				// printf("GetProcAddress - module: %s, proc: %s\n", moduleName.c_str(), lpProcName);
+				const auto newName = GetIl2cppRealName(lpProcName);
+				auto ret = reinterpret_cast<decltype(GetProcAddress_hook)*>(GetProcAddress_orig)(hModule, newName.c_str());
+				if (ret) {
+					return ret;
+				}
+			}
+		}
+
+		return reinterpret_cast<decltype(GetProcAddress_hook)*>(GetProcAddress_orig)(hModule, lpProcName);
+	}
+
 
 	void patchBeforeCRI();
 
@@ -137,6 +167,9 @@ namespace
 		if (patched) return;
 		patched = true;
 		// printf("patchOnce\n");
+
+		MH_CreateHook(GetProcAddress, GetProcAddress_hook, &GetProcAddress_orig);
+		MH_EnableHook(GetProcAddress);
 
 		MH_CreateHook(FindFirstFileExW, FindFirstFileExW_hook, &FindFirstFileExW_orig);
 		MH_EnableHook(FindFirstFileExW);
@@ -155,7 +188,7 @@ namespace
 		// if (path == L"libnative.dll"sv)
 		// if (path == L"cri_ware_unity.dll"sv)
 		{
-			patchBeforeCRI();
+			// patchBeforeCRI();
 			return reinterpret_cast<decltype(load_library_w_hook)*>(load_library_w_orig)(path);
 		}
 
@@ -295,13 +328,23 @@ namespace
 		if (!mh_inited)
 			return;
 
-		// printf("Trying to patch GameAssembly.dll...\n");
+		printf("Trying to patch GameAssembly.dll...\n");
 
 		auto il2cpp_module = GetModuleHandle("GameAssembly.dll");
+
+		printf("il2cpp_module at %p\n", il2cpp_module);
+
+		g_il2cppSymbols = PluginLoader::Requests::GetIl2cppSymbolMapWithCache(il2cpp_module);
+		if (g_il2cppSymbols.empty()) {
+			return;
+		}
 
 		// load il2cpp exported functions
 		il2cpp_symbols::init(il2cpp_module);
 		// 在这后面 ADD_HOOK
+
+		printf("il2cpp init end\n");
+		// return;
 
 		environment_get_stacktrace = reinterpret_cast<decltype(environment_get_stacktrace)>(il2cpp_symbols::get_method_pointer("mscorlib.dll", "System", "Environment", "get_StackTrace", 0));
 
@@ -323,8 +366,15 @@ bool init_hook()
 
 	patchOnInit();
 
-	MH_CreateHook(LoadLibraryW, load_library_w_hook, &load_library_w_orig);
-	MH_EnableHook(LoadLibraryW);
+	auto cri_ware_handle = GetModuleHandleW(L"cri_ware_unity.dll");
+	if (cri_ware_handle) {
+		path_game_assembly();
+	}
+	else {
+		auto stat1 = MH_CreateHook(LoadLibraryW, load_library_w_hook, &load_library_w_orig);
+		auto stat2 = MH_EnableHook(LoadLibraryW);
+		// printf("LoadLibraryW: %s, %s\n", MH_StatusToString(stat1), MH_StatusToString(stat2));
+	}
 
 	return true;
 }

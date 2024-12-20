@@ -8,4 +8,8 @@ namespace PluginLoader {
 	bool freeDll(const std::wstring& dllName);
 	std::unordered_map<std::wstring, HMODULE> getLoadedDll();
 	void CheckAndLoadDll();
+
+	namespace Requests {
+		std::unordered_map<std::string, std::string> GetIl2cppSymbolMapWithCache(HMODULE il2cpp_module);
+	}
 }

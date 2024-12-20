@@ -103,6 +103,36 @@ LONG WINAPI AddressExceptionHandler(EXCEPTION_POINTERS* ExceptionInfo) {
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// https://github.com/Kimjio/umamusume-localify
+void* UnityMain_orig = nullptr;
+extern "C" __declspec(dllexport) int __stdcall UnityMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nShowCmd) {
+	std::wstring module_name;
+	module_name.resize(MAX_PATH);
+	module_name.resize(GetModuleFileNameW(GetModuleHandleW(L"UnityPlayer.dll"), module_name.data(), MAX_PATH));
+
+	std::filesystem::path module_path(module_name);
+
+	std::wstring szISOLang;
+	szISOLang.resize(5);
+	szISOLang.resize(static_cast<size_t>(GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SISO639LANGNAME, szISOLang.data(), szISOLang.size()) - 1));
+
+	if (module_path.parent_path() == std::filesystem::current_path()) {
+		MessageBoxW(nullptr, L"Don't overwrite the existing UnityPlayer.dll.", L"Error", MB_ICONERROR);
+		return 1;
+	}
+
+	try {
+		std::filesystem::copy_file(std::filesystem::current_path().append(L"UnityPlayer.dll"), L"umamusume.exe.local\\UnityPlayer.orig.dll", std::filesystem::copy_options::update_existing);
+	}
+	catch (std::exception& e) {}
+
+	auto unity = LoadLibraryW(L"UnityPlayer.orig.dll");
+
+	UnityMain_orig = GetProcAddress(unity, "UnityMain");
+
+	return reinterpret_cast<decltype(UnityMain)*>(UnityMain_orig)(hInstance, hPrevInstance, lpCmdLine, nShowCmd);
+}
+
 
 int __stdcall DllMain(HINSTANCE dllModule, DWORD reason, LPVOID)
 {
